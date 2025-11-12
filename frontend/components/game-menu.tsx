@@ -10,7 +10,7 @@ interface Mission {
   id: number
   target: string
   type: string
-  cost: number // Changed from string to number
+  cost: number
   dividend: string
   mission: string
   distance: string
@@ -26,13 +26,14 @@ type MissionResult = {
 
 export default function GameMenu() {
   const [isMuted, setIsMuted] = useState(false)
-  const [gameScreen, setGameScreen] = useState<"menu" | "story" | "missions">("menu")
+  const [gameScreen, setGameScreen] = useState<"menu" | "story" | "missions" | "victory" | "defeat">("menu")
   const [displayedText, setDisplayedText] = useState("")
   const [showMissionButton, setShowMissionButton] = useState(false)
   const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
   const [missionProgress, setMissionProgress] = useState<Record<number, number>>({})
   const [gameDays, setGameDays] = useState(30)
   const [funds, setFunds] = useState(1000000)
+  const [initialFunds] = useState(1000000) // Track initial funds for victory condition
   const [availableMissions, setAvailableMissions] = useState<Mission[]>([])
   const [completedMissions, setCompletedMissions] = useState<MissionResult[]>([])
   const [showInvestmentPopup, setShowInvestmentPopup] = useState(false)
@@ -50,12 +51,28 @@ export default function GameMenu() {
 
 이제 당신의 선택이 인류의 미래를 결정할 것입니다.`
 
+  const victoryText = `축하합니다!
+
+당신의 뛰어난 우주 탐사 능력으로 막대한 자금을 확보했습니다.
+
+인류는 이제 더 넓은 우주로 나아갈 수 있게 되었습니다.
+
+당신은 역사상 가장 위대한 우주 탐사가로 기억될 것입니다.`
+
+  const defeatText = `임무 기간이 종료되었습니다.
+
+목표 자금을 확보하지 못했습니다.
+
+하지만 당신의 노력은 헛되지 않았습니다.
+
+다음 기회에는 더 나은 결과를 기대해봅시다.`
+
   const allMissions: Mission[] = [
     {
       id: 1,
       target: "달",
       type: "위성",
-      cost: 50000, // Changed from string to number
+      cost: 50000,
       dividend: "75,000 ₵",
       mission: "자원 채굴",
       distance: "384,400 km",
@@ -67,7 +84,7 @@ export default function GameMenu() {
       id: 2,
       target: "화성",
       type: "행성",
-      cost: 150000, // Changed from string to number
+      cost: 150000,
       dividend: "250,000 ₵",
       mission: "기지 건설",
       distance: "225,000,000 km",
@@ -79,7 +96,7 @@ export default function GameMenu() {
       id: 3,
       target: "유로파",
       type: "위성",
-      cost: 200000, // Changed from string to number
+      cost: 200000,
       dividend: "350,000 ₵",
       mission: "생명체 탐사",
       distance: "628,000,000 km",
@@ -91,7 +108,7 @@ export default function GameMenu() {
       id: 4,
       target: "타이탄",
       type: "위성",
-      cost: 250000, // Changed from string to number
+      cost: 250000,
       dividend: "450,000 ₵",
       mission: "대기 분석",
       distance: "1,200,000,000 km",
@@ -103,7 +120,7 @@ export default function GameMenu() {
       id: 5,
       target: "목성",
       type: "행성",
-      cost: 500000, // Changed from string to number
+      cost: 500000,
       dividend: "900,000 ₵",
       mission: "궤도 관측",
       distance: "778,000,000 km",
@@ -115,7 +132,7 @@ export default function GameMenu() {
       id: 6,
       target: "토성",
       type: "행성",
-      cost: 600000, // Changed from string to number
+      cost: 600000,
       dividend: "1,100,000 ₵",
       mission: "고리 연구",
       distance: "1,400,000,000 km",
@@ -127,7 +144,7 @@ export default function GameMenu() {
       id: 7,
       target: "소행성 벨트",
       type: "소행성군",
-      cost: 100000, // Changed from string to number
+      cost: 100000,
       dividend: "180,000 ₵",
       mission: "광물 채취",
       distance: "450,000,000 km",
@@ -139,7 +156,7 @@ export default function GameMenu() {
       id: 8,
       target: "명왕성",
       type: "왜행성",
-      cost: 800000, // Changed from string to number
+      cost: 800000,
       dividend: "1,500,000 ₵",
       mission: "극지 탐사",
       distance: "5,900,000,000 km",
@@ -170,17 +187,32 @@ export default function GameMenu() {
   useEffect(() => {
     if (gameScreen === "missions" && availableMissions.length === 0) {
       const shuffled = [...allMissions].sort(() => Math.random() - 0.5)
-      const numMissions = Math.floor(Math.random() * 2) + 2
-      const initialMissions = shuffled.slice(0, numMissions)
+      const initialMissions = shuffled.slice(0, 5)
       setAvailableMissions(initialMissions)
     }
   }, [gameScreen])
 
   useEffect(() => {
+    if (gameScreen === "missions") {
+      if (funds >= initialFunds * 5) {
+        setGameScreen("victory")
+        setDisplayedText("")
+        setShowMissionButton(false)
+        setIsStoryComplete(false)
+      } else if (gameDays <= 0) {
+        setGameScreen("defeat")
+        setDisplayedText("")
+        setShowMissionButton(false)
+        setIsStoryComplete(false)
+      }
+    }
+  }, [funds, gameDays, gameScreen, initialFunds])
+
+  useEffect(() => {
     if (gameScreen === "missions" && !showInvestmentPopup) {
       const timeInterval = setInterval(() => {
         setGameDays((prev) => Math.max(0, prev - 1))
-      }, 3000) // Every 3 seconds, 1 day decreases
+      }, 3000)
 
       return () => clearInterval(timeInterval)
     }
@@ -242,19 +274,21 @@ export default function GameMenu() {
   }, [activeMissions, availableMissions])
 
   useEffect(() => {
-    if (gameScreen === "story") {
+    if (gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat") {
       let currentIndex = 0
       let typingInterval: NodeJS.Timeout | null = null
 
+      const currentStoryText = gameScreen === "story" ? storyText : gameScreen === "victory" ? victoryText : defeatText
+
       const completeStory = () => {
-        setDisplayedText(storyText)
+        setDisplayedText(currentStoryText)
         setIsStoryComplete(true)
         setTimeout(() => setShowMissionButton(true), 500)
       }
 
       typingInterval = setInterval(() => {
-        if (currentIndex <= storyText.length) {
-          setDisplayedText(storyText.slice(0, currentIndex))
+        if (currentIndex <= currentStoryText.length) {
+          setDisplayedText(currentStoryText.slice(0, currentIndex))
           currentIndex++
         } else {
           if (typingInterval) clearInterval(typingInterval)
@@ -277,7 +311,7 @@ export default function GameMenu() {
         document.removeEventListener("click", handleClick)
       }
     }
-  }, [gameScreen, storyText])
+  }, [gameScreen, storyText, victoryText, defeatText])
 
   const toggleSound = () => {
     setIsMuted(!isMuted)
@@ -355,6 +389,7 @@ export default function GameMenu() {
     setCompletedMissions([])
     setAvailableMissions([])
     setGameDays(30)
+    setFunds(1000000)
   }
 
   return (
@@ -442,7 +477,7 @@ export default function GameMenu() {
               </Button>
             </div>
           </>
-        ) : gameScreen === "story" ? (
+        ) : gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat" ? (
           <>
             <div className="max-w-3xl mx-auto text-center px-8">
               <p className="text-xl md:text-2xl leading-relaxed text-white whitespace-pre-line font-light">
@@ -452,24 +487,37 @@ export default function GameMenu() {
 
               {showMissionButton && (
                 <div className="mt-12 animate-fade-in flex flex-col gap-4 items-center">
-                  <Button
-                    size="lg"
-                    onClick={handleMissionSelect}
-                    className="group relative h-16 px-12 overflow-hidden rounded-xl border-2 border-primary bg-primary/20 text-xl font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-primary/40 hover:scale-105 hover:shadow-[0_0_30px_rgba(168,85,247,0.5)]"
-                  >
-                    <span className="relative z-10">임무 선택</span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/30 to-purple-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                  </Button>
+                  {gameScreen === "story" ? (
+                    <>
+                      <Button
+                        size="lg"
+                        onClick={handleMissionSelect}
+                        className="group relative h-16 px-12 overflow-hidden rounded-xl border-2 border-primary bg-primary/20 text-xl font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-primary/40 hover:scale-105 hover:shadow-[0_0_30px_rgba(168,85,247,0.5)]"
+                      >
+                        <span className="relative z-10">임무 선택</span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/30 to-purple-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                      </Button>
 
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={handleBackToMenu}
-                    className="group h-14 px-10 overflow-hidden rounded-xl border-2 border-muted-foreground/30 bg-muted/10 text-lg font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-muted/30 hover:scale-105 hover:shadow-[0_0_20px_rgba(148,163,184,0.3)]"
-                  >
-                    <span className="relative z-10">돌아가기</span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-slate-500/0 via-slate-500/20 to-slate-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                  </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleBackToMenu}
+                        className="group h-14 px-10 overflow-hidden rounded-xl border-2 border-muted-foreground/30 bg-muted/10 text-lg font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-muted/30 hover:scale-105 hover:shadow-[0_0_20px_rgba(148,163,184,0.3)]"
+                      >
+                        <span className="relative z-10">돌아가기</span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-slate-500/0 via-slate-500/20 to-slate-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="lg"
+                      onClick={handleBackToTitle}
+                      className="group relative h-16 px-12 overflow-hidden rounded-xl border-2 border-purple-500/50 bg-purple-500/20 text-xl font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-purple-500/40 hover:scale-105 hover:shadow-[0_0_30px_rgba(168,85,247,0.5)]"
+                    >
+                      <span className="relative z-10">타이틀</span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/30 to-purple-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
