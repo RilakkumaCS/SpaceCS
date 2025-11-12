@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Volume2, VolumeX, Home, X } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -36,9 +36,10 @@ export default function GameMenu() {
 //  const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
   const [activeMissions, setActiveMissions] = useState<Mission[]>([])
   const [missionProgress, setMissionProgress] = useState<Record<number, number>>({})
-  const [gameDays, setGameDays] = useState(30)
+  const [gameDays, setGameDays] = useState(50)
   const [funds, setFunds] = useState(1000000)
   const [initialFunds] = useState(1000000)
+  const [targetFunds] = useState(5000000)
   const [availableMissions, setAvailableMissions] = useState<Mission[]>([])
   const [completedMissions, setCompletedMissions] = useState<MissionResult[]>([])
   const [showInvestmentPopup, setShowInvestmentPopup] = useState(false)
@@ -52,30 +53,36 @@ export default function GameMenu() {
   const [selectedVehicle, setSelectedVehicle] = useState("")
   const [isStoryComplete, setIsStoryComplete] = useState(false)
   const [missionIdCounter, setMissionIdCounter] = useState(1)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const storyText = `서기 2157년, 인류는 태양계를 넘어 먼 우주로 진출했습니다.
+  const storyText = `서기XXXX년.외곽 식민지 Ares-7은 구조적 결함으로 위기에 처했습니다.
 
-당신은 우주 탐사선 '오디세이 호'의 함장으로 임명되었습니다.
+생명 유지 장치의 촉매제가 고갈되어, 행성의 남은 수명은 앞으로 50년.
 
-수많은 미지의 행성과 외계 생명체가 당신을 기다리고 있습니다.
+'오리온 무역 연맹'이 독점한 핵심 부품 가격은 1조 크레딧.
 
-이제 당신의 선택이 인류의 미래를 결정할 것입니다.`
+당신은 한때 함대 최고의 파일럿이었지만, 지금은 버림받은 용병입니다.
+
+이제 아레스-7의 마지막 희망으로 우주의 임무를 떠납니다.
+
+당신의 결정이 행성의 미래를 결정할 것입니다.`
 
   const victoryText = `축하합니다!
 
-당신의 뛰어난 우주 탐사 능력으로 막대한 자금을 확보했습니다.
+당신의 숭고하고 탁월한 능력으로 자금을 확보했습니다.
 
-인류는 이제 더 넓은 우주로 나아갈 수 있게 되었습니다.
+Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
 
-당신은 역사상 가장 위대한 우주 탐사가로 기억될 것입니다.`
+사람들은 희망을 되찾아, 당신을 추앙합니다.
 
-  const defeatText = `임무 기간이 종료되었습니다.
+당신은 역사상 가장 위대한 인물로 기억될 것입니다.`
 
-목표 자금을 확보하지 못했습니다.
+  const defeatText = `당신의 헌신적인 노력에도 불구하고 자금을 마련하는데 실패했습니다.
 
-하지만 당신의 노력은 헛되지 않았습니다.
+한때 찬란하게 빛나던 Ares-7은
+ 이제 우주의 역사 저편으로 사라지고 있습니다.
 
-다음 기회에는 더 나은 결과를 기대해봅시다.`
+꺼져가는 Ares-7의 빛과 함께 당신도 눈을 감습니다.`
 
   const fetchMissionsFromBackend = async (count = 5) => {
     const missions: Mission[] = []
@@ -177,6 +184,26 @@ export default function GameMenu() {
   }
 
   useEffect(() => {
+    // 1. Audio 객체 생성
+    // (space-mission.mp3 파일은 /public 폴더에 있어야 합니다)
+    const audio = new Audio("/space-mission.mp3") 
+    audio.loop = true  // 반복 재생
+    audio.volume = 0.3 // 볼륨 (0.0 ~ 1.0)
+    
+    // 2. Ref에 오디오 객체 저장
+    audioRef.current = audio
+
+    // 4. 컴포넌트가 사라질 때 오디오 정리
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+        audioRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     if (gameScreen === "missions" && availableMissions.length === 0) {
       fetchMissionsFromBackend(5).then((missions) => {
         setAvailableMissions(missions)
@@ -186,7 +213,7 @@ export default function GameMenu() {
 
   useEffect(() => {
     if (gameScreen === "missions") {
-      if (funds >= initialFunds * 5) {
+      if (funds >= targetFunds) {
         setGameScreen("victory")
         setDisplayedText("")
         setShowMissionButton(false)
@@ -209,20 +236,6 @@ export default function GameMenu() {
       return () => clearInterval(timeInterval)
     }
   }, [gameScreen, showInvestmentPopup])
-
-  useEffect(() => {
-    if (gameScreen === "missions" && gameDays % 10 === 0 && gameDays > 0) {
-      setAvailableMissions((prev) => {
-        const numToRemove = Math.min(2, prev.length)
-        const newMissions = prev.slice(numToRemove)
-        return newMissions
-      })
-
-      fetchMissionsFromBackend(Math.floor(Math.random() * 2) + 2).then((newMissions) => {
-        setAvailableMissions((prev) => [...prev, ...newMissions])
-      })
-    }
-  }, [gameDays, gameScreen])
 
   useEffect(() => {
     const intervals: NodeJS.Timeout[] = []
@@ -319,10 +332,21 @@ export default function GameMenu() {
   }, [gameScreen, storyText, victoryText, defeatText])
 
   const toggleSound = () => {
-    setIsMuted(!isMuted)
-  }
+    if (!audioRef.current) return // 오디오가 없으면 아무것도 안 함
+
+    const nextMuted = !isMuted
+    setIsMuted(nextMuted)
+    audioRef.current.muted = nextMuted
+
+    // (추가) 음소거를 해제할 때 혹시 멈춰있다면 다시 재생
+    if (!nextMuted && audioRef.current.paused) {
+      audioRef.current.play().catch(e => console.error("오디오 재생 실패:", e));
+    }  }
 
   const handleGameStart = () => {
+    if (audioRef.current && audioRef.current.paused) {
+      audioRef.current.play().catch(e => console.error("오디오 재생 실패:", e));
+    }
     setDisplayedText("")
     setShowMissionButton(false)
     setIsStoryComplete(false)
@@ -578,9 +602,13 @@ const handleAcceptMission = (missionId: number) => {
         ) : (
           <div className="w-full h-full flex flex-col">
             <div className="flex items-center justify-between px-8 py-6">
-              <div className="text-cyan-300 text-lg font-bold">기간: {gameDays}일</div>
+              <div className="text-cyan-300 text-lg font-bold">기간: {gameDays}년</div>
               <h1 className="text-3xl font-bold text-white tracking-wider">SpaceMissionList</h1>
-              <div className="text-cyan-300 text-lg font-bold">자금: {funds.toLocaleString()} ₵</div>
+              <div className="text-right">
+                <div className="text-cyan-300 text-lg font-bold">자금: {funds.toLocaleString()} ₵</div>
+                {}
+                <div className="text-purple-300 text-lg font-bold">목표 자금: { targetFunds } ₵</div>
+                </div>
             </div>
 
             <div className="flex-1 flex items-center px-8 py-4 gap-8">
@@ -779,7 +807,7 @@ const handleAcceptMission = (missionId: number) => {
             </div>
 
             <div className="text-center pb-2 text-cyan-300/60 text-sm">
-              ← 좌우로 드래그하여 더 많은 임무를 확인하세요 →
+              ← 좌우로 슬라이드하여 더 많은 임무를 확인하세요 →
             </div>
 
             <div className="text-center pb-6">
