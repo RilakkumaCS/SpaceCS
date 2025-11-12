@@ -33,7 +33,8 @@ export default function GameMenu() {
   const [gameScreen, setGameScreen] = useState<"menu" | "story" | "missions" | "victory" | "defeat">("menu")
   const [displayedText, setDisplayedText] = useState("")
   const [showMissionButton, setShowMissionButton] = useState(false)
-  const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
+//  const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
+  const [activeMissions, setActiveMissions] = useState<Mission[]>([])
   const [missionProgress, setMissionProgress] = useState<Record<number, number>>({})
   const [gameDays, setGameDays] = useState(30)
   const [funds, setFunds] = useState(1000000)
@@ -42,12 +43,12 @@ export default function GameMenu() {
   const [completedMissions, setCompletedMissions] = useState<MissionResult[]>([])
   const [showInvestmentPopup, setShowInvestmentPopup] = useState(false)
   const [selectedMissionForInvestment, setSelectedMissionForInvestment] = useState<Mission | null>(null)
-  const [distanceInvestment, setDistanceInvestment] = useState("")
-  const [durationInvestment, setDurationInvestment] = useState("")
-  const [scienceInvestment, setScienceInvestment] = useState("")
-  const [crewInvestment, setCrewInvestment] = useState("")
-  const [fuelInvestment, setFuelInvestment] = useState("")
-  const [payloadInvestment, setPayloadInvestment] = useState("")
+  const [distanceReduction, setDistanceReduction] = useState("0")
+  const [durationReduction, setDurationReduction] = useState("0")
+  const [scienceInvestment, setScienceInvestment] = useState("0")
+  const [crewInvestment, setCrewInvestment] = useState("0")
+  const [fuelInvestment, setFuelInvestment] = useState("0")
+  const [payloadReduction, setPayloadReduction] = useState("0")
   const [selectedVehicle, setSelectedVehicle] = useState("")
   const [isStoryComplete, setIsStoryComplete] = useState(false)
   const [missionIdCounter, setMissionIdCounter] = useState(1)
@@ -76,16 +77,17 @@ export default function GameMenu() {
 
 다음 기회에는 더 나은 결과를 기대해봅시다.`
 
-  const fetchMissionsFromBackend = async (count = 5, difficulty = "normal") => {
+  const fetchMissionsFromBackend = async (count = 5) => {
     const missions: Mission[] = []
     for (let i = 0; i < count; i++) {
       try {
         const seed = Date.now() + i
-        const response = await fetch(`${API_BASE_URL}/preset?difficulty=${difficulty}&seed=${seed}`)
+        const response = await fetch(`${API_BASE_URL}/preset?seed=${seed}`)
         const data = await response.json()
         missions.push({
           id: missionIdCounter + i,
           ...data,
+          difficulty: "normal",
         })
       } catch (error) {
         console.error("[v0] Failed to fetch mission from backend:", error)
@@ -117,10 +119,11 @@ export default function GameMenu() {
         }),
       })
       const data = await response.json()
+      console.log("[v0] Backend prediction for mission", mission.id, ":", data.success_final)
       return data.success_final
     } catch (error) {
       console.error("[v0] Failed to predict mission success:", error)
-      return 50
+      return Math.random() * 40 + 30
     }
   }
 
@@ -142,22 +145,40 @@ export default function GameMenu() {
   ]
 
   const calculateInvestmentCost = () => {
-    const distance = Number.parseFloat(distanceInvestment) || 0
-    const duration = Number.parseFloat(durationInvestment) || 0
-    const science = Number.parseFloat(scienceInvestment) || 0
-    const crew = Number.parseInt(crewInvestment) || 0
-    const fuel = Number.parseFloat(fuelInvestment) || 0
-    const payload = Number.parseFloat(payloadInvestment) || 0
-    const vehicleCost = vehicleOptions.find((v) => v.name === selectedVehicle)?.cost || 0
+    if (!selectedMissionForInvestment) return 0
 
-    return Math.round(
-      distance * 100 + duration * 5000 + science * 200 + crew * 2000 + fuel * 10 + payload * 1000 + vehicleCost,
+    const distance = Math.max(0, Number.parseFloat(distanceReduction) || 0)
+    const duration = Math.max(0, Number.parseFloat(durationReduction) || 0)
+    const science = Math.max(0, Number.parseFloat(scienceInvestment) || 0)
+    const crew = Math.max(0, Number.parseInt(crewInvestment) || 0)
+    const fuel = Math.max(0, Number.parseFloat(fuelInvestment) || 0)
+    const payload = Math.max(0, Number.parseFloat(payloadReduction) || 0)
+
+    const vehicleCost =
+      selectedVehicle !== selectedMissionForInvestment?.launch_vehicle
+        ? vehicleOptions.find((v) => v.name === selectedVehicle)?.cost || 0
+        : 0
+
+    // All reductions and additions cost money
+    const additionalInvestment = Math.round(
+      distance * 100 + // Distance reduction cost
+        duration * 5000 + // Duration reduction cost
+        payload * 1000 + // Payload reduction cost
+        science * 200 + // Science investment
+        crew * 2000 + // Crew investment
+        fuel * 10 + // Fuel investment
+        vehicleCost,
     )
+
+    // Always include base mission cost
+    const baseCost = calculateMissionCost(selectedMissionForInvestment)
+
+    return Math.max(0, baseCost + additionalInvestment)
   }
 
   useEffect(() => {
     if (gameScreen === "missions" && availableMissions.length === 0) {
-      fetchMissionsFromBackend(5, "normal").then((missions) => {
+      fetchMissionsFromBackend(5).then((missions) => {
         setAvailableMissions(missions)
       })
     }
@@ -197,7 +218,7 @@ export default function GameMenu() {
         return newMissions
       })
 
-      fetchMissionsFromBackend(Math.floor(Math.random() * 2) + 2, "normal").then((newMissions) => {
+      fetchMissionsFromBackend(Math.floor(Math.random() * 2) + 2).then((newMissions) => {
         setAvailableMissions((prev) => [...prev, ...newMissions])
       })
     }
@@ -206,32 +227,45 @@ export default function GameMenu() {
   useEffect(() => {
     const intervals: NodeJS.Timeout[] = []
 
-    activeMissions.forEach((missionId) => {
-      const mission = availableMissions.find((m) => m.id === missionId)
-      if (mission && (missionProgress[missionId] || 0) < 100) {
-        const durationDays = mission.duration_years * 365
-        const totalTimeMs = durationDays * 10
+    activeMissions.forEach((mission) => {
+      if (mission && (missionProgress[mission.id] || 0) < 100) {
+        const durationInSeconds = mission.duration_years * 3
         const updateIntervalMs = 100
-        const progressPerUpdate = (100 / totalTimeMs) * updateIntervalMs
+        const progressPerUpdate = (100 / (durationInSeconds * 1000)) * updateIntervalMs
 
         const interval = setInterval(() => {
           setMissionProgress((prev) => {
-            const currentProgress = prev[missionId] || 0
-            if (currentProgress >= 100) {
+            const currentProgress = prev[mission.id] || 0
+            const newProgress = Math.min(currentProgress + progressPerUpdate, 100)
+
+            if (newProgress >= 100) {
               clearInterval(interval)
 
-              predictMissionSuccess(mission).then((successProbability) => {
-                const isSuccess = Math.random() * 100 < successProbability
-                setCompletedMissions((completed) => [...completed, { missionId, success: isSuccess }])
+              if (currentProgress < 100) {
+                predictMissionSuccess(mission).then((successProbability) => {
+                  const randomValue = Math.random() * 100
+                  const isSuccess = randomValue < successProbability
+                  console.log(
+                    "[v0] Mission",
+                    mission.id,
+                    "- Probability:",
+                    successProbability.toFixed(2),
+                    "% Random:",
+                    randomValue.toFixed(2),
+                    "Result:",
+                    isSuccess ? "SUCCESS" : "FAILURE",
+                  )
+
+                setCompletedMissions((completed) => [...completed, { missionId: mission.id, success: isSuccess }])
                 if (isSuccess) {
                   const missionCost = calculateMissionCost(mission)
                   setFunds((prev) => prev + missionCost * 2)
                 }
               })
-
-              return prev
             }
-            return { ...prev, [missionId]: Math.min(currentProgress + progressPerUpdate, 100) }
+              return { ...prev, [mission.id]: 100 }
+            }
+            return { ...prev, [mission.id]: newProgress }
           })
         }, updateIntervalMs)
 
@@ -240,16 +274,19 @@ export default function GameMenu() {
     })
 
     return () => intervals.forEach(clearInterval)
-  }, [activeMissions, availableMissions])
+  }, [activeMissions, missionProgress])
 
   useEffect(() => {
     if (gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat") {
       let currentIndex = 0
       let typingInterval: NodeJS.Timeout | null = null
+      let hasCompletedStory = false
 
       const currentStoryText = gameScreen === "story" ? storyText : gameScreen === "victory" ? victoryText : defeatText
 
       const completeStory = () => {
+        if (hasCompletedStory) return
+        hasCompletedStory = true
         setDisplayedText(currentStoryText)
         setIsStoryComplete(true)
         setTimeout(() => setShowMissionButton(true), 500)
@@ -261,13 +298,12 @@ export default function GameMenu() {
           currentIndex++
         } else {
           if (typingInterval) clearInterval(typingInterval)
-          setIsStoryComplete(true)
-          setTimeout(() => setShowMissionButton(true), 500)
+          completeStory()
         }
       }, 50)
 
       const handleClick = () => {
-        if (!isStoryComplete) {
+        if (!hasCompletedStory) {
           if (typingInterval) clearInterval(typingInterval)
           completeStory()
         }
@@ -304,6 +340,7 @@ export default function GameMenu() {
     setGameScreen("missions")
   }
 
+  /*
   const handleAcceptMission = (missionId: number) => {
     const mission = availableMissions.find((m) => m.id === missionId)
     if (mission) {
@@ -314,41 +351,66 @@ export default function GameMenu() {
         setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
       }
     }
+  }*/
+
+ // (핵심 수정 2)
+const handleAcceptMission = (missionId: number) => {
+  const mission = availableMissions.find((m) => m.id === missionId)
+  if (mission) {
+    const missionCost = calculateMissionCost(mission)
+    if (funds >= missionCost) {
+      setFunds((prev) => prev - missionCost)
+      setActiveMissions((prev) => [...prev, mission]) // (수정) 객체 전체를 추가
+      setAvailableMissions((prev) => prev.filter(m => m.id !== missionId)) // (중요) 사용 가능 목록에서 제거
+      setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
+    }
   }
+}
 
   const handleOpenInvestment = (mission: Mission) => {
     setSelectedMissionForInvestment(mission)
     setSelectedVehicle(mission.launch_vehicle)
-    setDistanceInvestment("0")
-    setDurationInvestment("0")
+    setDistanceReduction("0")
+    setDurationReduction("0")
     setScienceInvestment("0")
     setCrewInvestment("0")
     setFuelInvestment("0")
-    setPayloadInvestment("0")
+    setPayloadReduction("0")
     setShowInvestmentPopup(true)
   }
 
   const handleConfirmInvestment = async () => {
     if (selectedMissionForInvestment) {
       const totalCost = calculateInvestmentCost()
+
       if (funds >= totalCost) {
+        // Apply modifications to mission
         const modifiedMission: Mission = {
           ...selectedMissionForInvestment,
-          distance_ly: selectedMissionForInvestment.distance_ly + (Number.parseFloat(distanceInvestment) || 0),
-          duration_years: selectedMissionForInvestment.duration_years + (Number.parseFloat(durationInvestment) || 0),
-          science_pts: selectedMissionForInvestment.science_pts + (Number.parseFloat(scienceInvestment) || 0),
-          crew_size: selectedMissionForInvestment.crew_size + (Number.parseInt(crewInvestment) || 0),
-          fuel_tons: selectedMissionForInvestment.fuel_tons + (Number.parseFloat(fuelInvestment) || 0),
-          payload_tons: selectedMissionForInvestment.payload_tons + (Number.parseFloat(payloadInvestment) || 0),
+          distance_ly: Math.max(
+            0.1,
+            selectedMissionForInvestment.distance_ly - (Number.parseFloat(distanceReduction) || 0),
+          ),
+          duration_years: Math.max(
+            0.1,
+            selectedMissionForInvestment.duration_years - (Number.parseFloat(durationReduction) || 0),
+          ),
+          payload_tons: Math.max(
+            0.1,
+            selectedMissionForInvestment.payload_tons - (Number.parseFloat(payloadReduction) || 0),
+          ),
+          science_pts:
+            selectedMissionForInvestment.science_pts + Math.max(0, Number.parseFloat(scienceInvestment) || 0),
+          crew_size: selectedMissionForInvestment.crew_size + Math.max(0, Number.parseInt(crewInvestment) || 0),
+          fuel_tons: selectedMissionForInvestment.fuel_tons + Math.max(0, Number.parseFloat(fuelInvestment) || 0),
           launch_vehicle: selectedVehicle,
         }
 
-        setAvailableMissions((prev) =>
-          prev.map((m) => (m.id === selectedMissionForInvestment.id ? modifiedMission : m)),
-        )
+        console.log("[v0] Modified mission:", modifiedMission)
 
         setFunds((prev) => prev - totalCost)
-        setActiveMissions((prev) => new Set(prev).add(selectedMissionForInvestment.id))
+        setActiveMissions((prev) => [...prev, modifiedMission]) // (수정) 객체 전체를 추가
+        setAvailableMissions((prev) => prev.filter(m => m.id !== selectedMissionForInvestment.id)) // (중요) 사용 가능 목록에서 제거
         setMissionProgress((prev) => ({ ...prev, [selectedMissionForInvestment.id]: 0 }))
         setShowInvestmentPopup(false)
         setSelectedMissionForInvestment(null)
@@ -357,11 +419,7 @@ export default function GameMenu() {
   }
 
   const handleMissionComplete = (missionId: number) => {
-    setActiveMissions((prev) => {
-      const newSet = new Set(prev)
-      newSet.delete(missionId)
-      return newSet
-    })
+    setActiveMissions((prev) => prev.filter((m) => m.id !== missionId))
 
     setMissionProgress((prev) => {
       const newProgress = { ...prev }
@@ -376,7 +434,7 @@ export default function GameMenu() {
 
   const handleBackToTitle = () => {
     setGameScreen("menu")
-    setActiveMissions(new Set())
+    setActiveMissions([])
     setMissionProgress({})
     setCompletedMissions([])
     setAvailableMissions([])
@@ -385,20 +443,23 @@ export default function GameMenu() {
     setMissionIdCounter(1)
   }
 
+  const handleResetMissions = async () => {
+    const newMissions = await fetchMissionsFromBackend(5)
+    setAvailableMissions(newMissions)
+  }
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-[#0a0e27]">
       {/* Animated space background */}
       <div className="absolute inset-0">
-        {/* Stars layer 1 */}
         <div className="absolute inset-0">
           {[...Array(50)].map((_, i) => (
             <div
               key={`star1-${i}`}
-              className="absolute h-1 w-1 rounded-full bg-white animate-twinkle-slow"
+              className="absolute h-1 w-1 rounded-full bg-white"
               style={{
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 4}s`,
               }}
             />
           ))}
@@ -409,11 +470,10 @@ export default function GameMenu() {
           {[...Array(30)].map((_, i) => (
             <div
               key={`star2-${i}`}
-              className="absolute h-2 w-2 rounded-full bg-blue-200 animate-twinkle-slow"
+              className="absolute h-2 w-2 rounded-full bg-blue-200"
               style={{
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 6}s`,
                 opacity: 0.6,
               }}
             />
@@ -527,7 +587,7 @@ export default function GameMenu() {
               <div className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-hide">
                 <div className="flex gap-6 pb-4 px-4">
                   {availableMissions.map((mission) => {
-                    const isActive = activeMissions.has(mission.id)
+                    const isActive = activeMissions.some((m) => m.id === mission.id)
                     const missionCost = calculateMissionCost(mission)
                     return (
                       <div
@@ -666,20 +726,19 @@ export default function GameMenu() {
                 </div>
               </div>
 
-              {activeMissions.size > 0 && (
+              {activeMissions.length > 0 && (
                 <div className="w-80 flex-shrink-0 space-y-4 pr-4 overflow-y-auto max-h-[70vh]">
-                  {Array.from(activeMissions).map((missionId) => {
-                    const mission = availableMissions.find((m) => m.id === missionId)
-                    const progress = missionProgress[missionId] || 0
-                    const completionResult = completedMissions.find((c) => c.missionId === missionId)
+                  {Array.from(activeMissions).map((mission) => {
+                    const progress = missionProgress[mission.id] || 0
+                    const completionResult = completedMissions.find((c) => c.missionId === mission.id)
 
                     return (
                       <div
-                        key={missionId}
+                        key={mission.id}
                         className="p-4 rounded-xl border-2 border-purple-500/30 bg-slate-900/60 backdrop-blur-md"
                       >
                         <h3 className="text-lg font-bold text-purple-300 mb-2">
-                          Mission #{missionId} {completionResult ? "" : "진행중..."}
+                          Mission #{mission.id} {completionResult ? "" : "진행중..."}
                         </h3>
                         <p className="text-sm text-cyan-300 mb-3">{mission?.target_type} 탐사</p>
 
@@ -695,7 +754,7 @@ export default function GameMenu() {
                               {completionResult.success ? "임무 성공!" : "임무 실패"}
                             </div>
                             <Button
-                              onClick={() => handleMissionComplete(missionId)}
+                              onClick={() => handleMissionComplete(mission.id)}
                               className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white font-bold py-2 rounded-lg"
                             >
                               확인
@@ -719,8 +778,17 @@ export default function GameMenu() {
               )}
             </div>
 
-            <div className="text-center pb-6 text-cyan-300/60 text-sm">
+            <div className="text-center pb-2 text-cyan-300/60 text-sm">
               ← 좌우로 드래그하여 더 많은 임무를 확인하세요 →
+            </div>
+
+            <div className="text-center pb-6">
+              <Button
+                onClick={handleResetMissions}
+                className="group h-12 px-6 rounded-xl border-2 border-cyan-500/30 bg-cyan-500/20 backdrop-blur-sm transition-all hover:bg-cyan-500/40 hover:scale-105 hover:shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+              >
+                <span className="text-cyan-300 font-bold">임무 재설정</span>
+              </Button>
             </div>
 
             <div className="absolute bottom-8 right-8">
@@ -734,7 +802,6 @@ export default function GameMenu() {
             </div>
           </div>
         )}
-
         <div className="absolute bottom-8 left-8">
           <Button
             size="icon"
@@ -778,7 +845,7 @@ export default function GameMenu() {
                     {selectedMissionForInvestment.mission_type}
                   </p>
                   <p className="text-gray-300">
-                    <span className="text-purple-300 font-bold">투자 비용:</span>{" "}
+                    <span className="text-purple-300 font-bold">기본 투자 비용:</span>{" "}
                     {calculateMissionCost(selectedMissionForInvestment).toLocaleString()} ₵
                   </p>
                   <p className="text-gray-300">
@@ -786,40 +853,17 @@ export default function GameMenu() {
                     {(calculateMissionCost(selectedMissionForInvestment) * 2).toLocaleString()} ₵
                   </p>
                   <p className="text-gray-300">
-                    <span className="text-cyan-300 font-bold">임무:</span> {selectedMissionForInvestment.mission_type} -
-                    Crew: {selectedMissionForInvestment.crew_size}
-                  </p>
-                  <p className="text-gray-300">
                     <span className="text-cyan-300 font-bold">거리:</span>{" "}
                     {selectedMissionForInvestment.distance_ly.toFixed(1)} ly
-                    {Number.parseFloat(distanceInvestment) > 0 && (
-                      <span className="text-green-400"> + {Number.parseFloat(distanceInvestment).toFixed(1)} ly</span>
+                    {Number.parseFloat(distanceReduction) > 0 && (
+                      <span className="text-red-400"> - {Number.parseFloat(distanceReduction).toFixed(1)} ly</span>
                     )}
-                  </p>
-                  <p className="text-gray-300">
-                    <span className="text-cyan-300 font-bold">연료:</span>{" "}
-                    {selectedMissionForInvestment.fuel_tons.toFixed(0)} tons
-                    {Number.parseFloat(fuelInvestment) > 0 && (
-                      <span className="text-green-400"> + {Number.parseFloat(fuelInvestment).toFixed(0)} tons</span>
-                    )}
-                  </p>
-                  <p className="text-gray-300">
-                    <span className="text-cyan-300 font-bold">기체:</span> {selectedVehicle}
                   </p>
                   <p className="text-gray-300">
                     <span className="text-cyan-300 font-bold">기간:</span>{" "}
                     {selectedMissionForInvestment.duration_years.toFixed(1)} years
-                    {Number.parseFloat(durationInvestment) > 0 && (
-                      <span className="text-green-400">
-                        {" "}
-                        + {Number.parseFloat(durationInvestment).toFixed(1)} years
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-gray-300">
-                    <span className="text-cyan-300 font-bold">승무원:</span> {selectedMissionForInvestment.crew_size}명
-                    {Number.parseInt(crewInvestment) > 0 && (
-                      <span className="text-green-400"> + {Number.parseInt(crewInvestment)}명</span>
+                    {Number.parseFloat(durationReduction) > 0 && (
+                      <span className="text-red-400"> - {Number.parseFloat(durationReduction).toFixed(1)} years</span>
                     )}
                   </p>
                   <p className="text-gray-300">
@@ -830,85 +874,128 @@ export default function GameMenu() {
                     )}
                   </p>
                   <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">승무원:</span> {selectedMissionForInvestment.crew_size}명
+                    {Number.parseInt(crewInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseInt(crewInvestment)}명</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">연료:</span>{" "}
+                    {selectedMissionForInvestment.fuel_tons.toFixed(0)} tons
+                    {Number.parseFloat(fuelInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseFloat(fuelInvestment).toFixed(0)} tons</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
                     <span className="text-cyan-300 font-bold">화물:</span>{" "}
                     {selectedMissionForInvestment.payload_tons.toFixed(0)} tons
-                    {Number.parseFloat(payloadInvestment) > 0 && (
-                      <span className="text-green-400"> + {Number.parseFloat(payloadInvestment).toFixed(0)} tons</span>
+                    {Number.parseFloat(payloadReduction) > 0 && (
+                      <span className="text-red-400"> - {Number.parseFloat(payloadReduction).toFixed(0)} tons</span>
                     )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">기체:</span> {selectedVehicle}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <h3 className="text-xl font-bold text-purple-300 mb-3">추가 투자</h3>
+                <h3 className="text-xl font-bold text-purple-300 mb-3">투자 항목</h3>
+
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">거리 추가 (ly)</label>
+                  <label className="block text-red-300 text-sm font-bold mb-1">거리 감소 (ly)</label>
                   <Input
                     type="number"
                     step="0.1"
-                    value={distanceInvestment}
-                    onChange={(e) => setDistanceInvestment(e.target.value)}
+                    min="0"
+                    max={Math.max(0.1, selectedMissionForInvestment.distance_ly - 1)}
+                    value={distanceReduction}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value) || 0
+                      setDistanceReduction(
+                        Math.max(0, Math.min(val, selectedMissionForInvestment.distance_ly - 1)).toString(),
+                      )
+                    }}
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-red-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">기간 추가 (years)</label>
+                  <label className="block text-red-300 text-sm font-bold mb-1">기간 감소 (years)</label>
                   <Input
                     type="number"
                     step="0.1"
-                    value={durationInvestment}
-                    onChange={(e) => setDurationInvestment(e.target.value)}
+                    min="0"
+                    max={Math.max(0.1, selectedMissionForInvestment.duration_years - 1)}
+                    value={durationReduction}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value) || 0
+                      setDurationReduction(
+                        Math.max(0, Math.min(val, selectedMissionForInvestment.duration_years - 1)).toString(),
+                      )
+                    }}
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-red-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">과학 연구 추가 (pts)</label>
+                  <label className="block text-green-300 text-sm font-bold mb-1">과학 연구 추가 (pts)</label>
                   <Input
                     type="number"
                     step="0.1"
+                    min="0"
                     value={scienceInvestment}
-                    onChange={(e) => setScienceInvestment(e.target.value)}
+                    onChange={(e) =>
+                      setScienceInvestment(Math.max(0, Number.parseFloat(e.target.value) || 0).toString())
+                    }
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-green-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">승무원 추가 (명)</label>
+                  <label className="block text-green-300 text-sm font-bold mb-1">승무원 추가 (명)</label>
                   <Input
                     type="number"
+                    min="0"
                     value={crewInvestment}
-                    onChange={(e) => setCrewInvestment(e.target.value)}
+                    onChange={(e) => setCrewInvestment(Math.max(0, Number.parseInt(e.target.value) || 0).toString())}
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-green-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">연료 추가 (tons)</label>
+                  <label className="block text-green-300 text-sm font-bold mb-1">연료 추가 (tons)</label>
                   <Input
                     type="number"
                     step="0.1"
+                    min="0"
                     value={fuelInvestment}
-                    onChange={(e) => setFuelInvestment(e.target.value)}
+                    onChange={(e) => setFuelInvestment(Math.max(0, Number.parseFloat(e.target.value) || 0).toString())}
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-green-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-1">화물 추가 (tons)</label>
+                  <label className="block text-red-300 text-sm font-bold mb-1">화물 감소 (tons)</label>
                   <Input
                     type="number"
                     step="0.1"
-                    value={payloadInvestment}
-                    onChange={(e) => setPayloadInvestment(e.target.value)}
+                    min="0"
+                    max={Math.max(0.1, selectedMissionForInvestment.payload_tons - 1)}
+                    value={payloadReduction}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value) || 0
+                      setPayloadReduction(
+                        Math.max(0, Math.min(val, selectedMissionForInvestment.payload_tons - 1)).toString(),
+                      )
+                    }}
                     placeholder="0"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                    className="bg-slate-800/50 border-red-500/30 text-white h-9"
                   />
                 </div>
 
@@ -932,11 +1019,11 @@ export default function GameMenu() {
 
             <div className="bg-slate-800/50 border-2 border-purple-500/30 rounded-lg p-4 mb-6">
               <p className="text-center text-xl font-bold">
-                <span className="text-purple-300">추가 투자 금액:</span>{" "}
+                <span className="text-purple-300">총 투자 금액:</span>{" "}
                 <span className="text-white">{calculateInvestmentCost().toLocaleString()} ₵</span>
               </p>
               <p className="text-center text-xs text-gray-400 mt-2">
-                추가 거리, 기간, 승무원, 연료, 화물 및 기체 변경 비용 합산
+                기본 비용 + 거리·기간·화물 감소 비용 + 과학·승무원·연료 추가 비용
               </p>
             </div>
 

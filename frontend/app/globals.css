@@ -124,15 +124,6 @@
   }
 }
 
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-20px);
-  }
-}
 
 @keyframes twinkle {
   0%,
@@ -141,17 +132,6 @@
   }
   50% {
     opacity: 0.3;
-  }
-}
-
-/* Added slower twinkle animation for stars */
-@keyframes twinkle-slow {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.2;
   }
 }
 
@@ -167,20 +147,12 @@
   }
 }
 
-.animate-float {
-  animation: float 3s ease-in-out infinite;
+/* Added scrollbar hide utility for smooth horizontal scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-.animate-twinkle {
-  animation: twinkle 2s ease-in-out infinite;
-}
-
-/* Added slow twinkle animation class */
-.animate-twinkle-slow {
-  animation: twinkle-slow 5s ease-in-out infinite;
-}
-
-/* Added fade-in animation class */
-.animate-fade-in {
-  animation: fade-in 0.8s ease-out forwards;
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
