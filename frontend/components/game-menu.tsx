@@ -8,21 +8,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface Mission {
   id: number
-  target: string
-  type: string
-  cost: number
-  dividend: string
-  mission: string
-  distance: string
-  fuel: string
-  vehicle: string
-  duration: string
+  payload_tons: number
+  mission_type: string
+  target_type: string
+  launch_vehicle: string
+  distance_ly: number
+  duration_years: number
+  science_pts: number
+  crew_size: number
+  fuel_tons: number
+  difficulty: string
+  success_probability?: number
 }
 
 type MissionResult = {
   missionId: number
   success: boolean
 }
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 export default function GameMenu() {
   const [isMuted, setIsMuted] = useState(false)
@@ -33,15 +37,20 @@ export default function GameMenu() {
   const [missionProgress, setMissionProgress] = useState<Record<number, number>>({})
   const [gameDays, setGameDays] = useState(30)
   const [funds, setFunds] = useState(1000000)
-  const [initialFunds] = useState(1000000) // Track initial funds for victory condition
+  const [initialFunds] = useState(1000000)
   const [availableMissions, setAvailableMissions] = useState<Mission[]>([])
   const [completedMissions, setCompletedMissions] = useState<MissionResult[]>([])
   const [showInvestmentPopup, setShowInvestmentPopup] = useState(false)
   const [selectedMissionForInvestment, setSelectedMissionForInvestment] = useState<Mission | null>(null)
+  const [distanceInvestment, setDistanceInvestment] = useState("")
+  const [durationInvestment, setDurationInvestment] = useState("")
+  const [scienceInvestment, setScienceInvestment] = useState("")
+  const [crewInvestment, setCrewInvestment] = useState("")
   const [fuelInvestment, setFuelInvestment] = useState("")
-  const [researchInvestment, setResearchInvestment] = useState("")
+  const [payloadInvestment, setPayloadInvestment] = useState("")
   const [selectedVehicle, setSelectedVehicle] = useState("")
   const [isStoryComplete, setIsStoryComplete] = useState(false)
+  const [missionIdCounter, setMissionIdCounter] = useState(1)
 
   const storyText = `서기 2157년, 인류는 태양계를 넘어 먼 우주로 진출했습니다.
 
@@ -67,128 +76,90 @@ export default function GameMenu() {
 
 다음 기회에는 더 나은 결과를 기대해봅시다.`
 
-  const allMissions: Mission[] = [
-    {
-      id: 1,
-      target: "달",
-      type: "위성",
-      cost: 50000,
-      dividend: "75,000 ₵",
-      mission: "자원 채굴",
-      distance: "384,400 km",
-      fuel: "2,000 L",
-      vehicle: "Lunar Explorer",
-      duration: "5",
-    },
-    {
-      id: 2,
-      target: "화성",
-      type: "행성",
-      cost: 150000,
-      dividend: "250,000 ₵",
-      mission: "기지 건설",
-      distance: "225,000,000 km",
-      fuel: "8,000 L",
-      vehicle: "Mars Pioneer",
-      duration: "15",
-    },
-    {
-      id: 3,
-      target: "유로파",
-      type: "위성",
-      cost: 200000,
-      dividend: "350,000 ₵",
-      mission: "생명체 탐사",
-      distance: "628,000,000 km",
-      fuel: "12,000 L",
-      vehicle: "Deep Explorer",
-      duration: "20",
-    },
-    {
-      id: 4,
-      target: "타이탄",
-      type: "위성",
-      cost: 250000,
-      dividend: "450,000 ₵",
-      mission: "대기 분석",
-      distance: "1,200,000,000 km",
-      fuel: "15,000 L",
-      vehicle: "Titan Scout",
-      duration: "25",
-    },
-    {
-      id: 5,
-      target: "목성",
-      type: "행성",
-      cost: 500000,
-      dividend: "900,000 ₵",
-      mission: "궤도 관측",
-      distance: "778,000,000 km",
-      fuel: "20,000 L",
-      vehicle: "Jupiter Voyager",
-      duration: "30",
-    },
-    {
-      id: 6,
-      target: "토성",
-      type: "행성",
-      cost: 600000,
-      dividend: "1,100,000 ₵",
-      mission: "고리 연구",
-      distance: "1,400,000,000 km",
-      fuel: "25,000 L",
-      vehicle: "Saturn Observer",
-      duration: "35",
-    },
-    {
-      id: 7,
-      target: "소행성 벨트",
-      type: "소행성군",
-      cost: 100000,
-      dividend: "180,000 ₵",
-      mission: "광물 채취",
-      distance: "450,000,000 km",
-      fuel: "6,000 L",
-      vehicle: "Asteroid Miner",
-      duration: "10",
-    },
-    {
-      id: 8,
-      target: "명왕성",
-      type: "왜행성",
-      cost: 800000,
-      dividend: "1,500,000 ₵",
-      mission: "극지 탐사",
-      distance: "5,900,000,000 km",
-      fuel: "35,000 L",
-      vehicle: "Deep Space Pioneer",
-      duration: "40",
-    },
-  ]
+  const fetchMissionsFromBackend = async (count = 5, difficulty = "normal") => {
+    const missions: Mission[] = []
+    for (let i = 0; i < count; i++) {
+      try {
+        const seed = Date.now() + i
+        const response = await fetch(`${API_BASE_URL}/preset?difficulty=${difficulty}&seed=${seed}`)
+        const data = await response.json()
+        missions.push({
+          id: missionIdCounter + i,
+          ...data,
+        })
+      } catch (error) {
+        console.error("[v0] Failed to fetch mission from backend:", error)
+      }
+    }
+    setMissionIdCounter((prev) => prev + count)
+    return missions
+  }
+
+  const predictMissionSuccess = async (mission: Mission): Promise<number> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/predict`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          payload_tons: mission.payload_tons,
+          mission_type: mission.mission_type,
+          target_type: mission.target_type,
+          launch_vehicle: mission.launch_vehicle,
+          distance_ly: mission.distance_ly,
+          duration_years: mission.duration_years,
+          science_pts: mission.science_pts,
+          crew_size: mission.crew_size,
+          fuel_tons: mission.fuel_tons,
+          clamp_min: 0.0,
+          clamp_max: 100.0,
+        }),
+      })
+      const data = await response.json()
+      return data.success_final
+    } catch (error) {
+      console.error("[v0] Failed to predict mission success:", error)
+      return 50
+    }
+  }
+
+  const calculateMissionCost = (mission: Mission): number => {
+    return Math.round(
+      mission.payload_tons * 1000 +
+        mission.distance_ly * 100 +
+        mission.duration_years * 5000 +
+        mission.fuel_tons * 10 +
+        mission.crew_size * 2000,
+    )
+  }
 
   const vehicleOptions = [
-    { name: "Lunar Explorer", cost: 10000 },
-    { name: "Mars Pioneer", cost: 30000 },
-    { name: "Deep Explorer", cost: 50000 },
-    { name: "Titan Scout", cost: 70000 },
-    { name: "Jupiter Voyager", cost: 100000 },
-    { name: "Saturn Observer", cost: 120000 },
-    { name: "Asteroid Miner", cost: 25000 },
-    { name: "Deep Space Pioneer", cost: 150000 },
+    { name: "Starship", cost: 50000 },
+    { name: "Falcon Heavy", cost: 30000 },
+    { name: "SLS", cost: 70000 },
+    { name: "Ariane 6", cost: 40000 },
   ]
 
   const calculateInvestmentCost = () => {
-    const fuel = Number.parseInt(fuelInvestment) || 0
-    const research = Number.parseInt(researchInvestment) || 0
+    const distance = Number.parseFloat(distanceInvestment) || 0
+    const duration = Number.parseFloat(durationInvestment) || 0
+    const science = Number.parseFloat(scienceInvestment) || 0
+    const crew = Number.parseInt(crewInvestment) || 0
+    const fuel = Number.parseFloat(fuelInvestment) || 0
+    const payload = Number.parseFloat(payloadInvestment) || 0
     const vehicleCost = vehicleOptions.find((v) => v.name === selectedVehicle)?.cost || 0
-    return fuel * 10 + research * 100 + vehicleCost
+
+    return Math.round(
+      distance * 100 + duration * 5000 + science * 200 + crew * 2000 + fuel * 10 + payload * 1000 + vehicleCost,
+    )
   }
 
   useEffect(() => {
     if (gameScreen === "missions" && availableMissions.length === 0) {
-      const shuffled = [...allMissions].sort(() => Math.random() - 0.5)
-      const initialMissions = shuffled.slice(0, 5)
-      setAvailableMissions(initialMissions)
+      fetchMissionsFromBackend(5, "normal").then((missions) => {
+        setAvailableMissions(missions)
+      })
     }
   }, [gameScreen])
 
@@ -223,18 +194,11 @@ export default function GameMenu() {
       setAvailableMissions((prev) => {
         const numToRemove = Math.min(2, prev.length)
         const newMissions = prev.slice(numToRemove)
-
-        const unusedMissions = allMissions.filter(
-          (m) => !newMissions.some((am) => am.id === m.id) && !activeMissions.has(m.id),
-        )
-
-        if (unusedMissions.length > 0) {
-          const numToAdd = Math.floor(Math.random() * 2) + 2
-          const shuffled = [...unusedMissions].sort(() => Math.random() - 0.5)
-          return [...newMissions, ...shuffled.slice(0, Math.min(numToAdd, unusedMissions.length))]
-        }
-
         return newMissions
+      })
+
+      fetchMissionsFromBackend(Math.floor(Math.random() * 2) + 2, "normal").then((newMissions) => {
+        setAvailableMissions((prev) => [...prev, ...newMissions])
       })
     }
   }, [gameDays, gameScreen])
@@ -243,10 +207,10 @@ export default function GameMenu() {
     const intervals: NodeJS.Timeout[] = []
 
     activeMissions.forEach((missionId) => {
-      const mission = availableMissions.find((m) => m.id === missionId) || allMissions.find((m) => m.id === missionId)
+      const mission = availableMissions.find((m) => m.id === missionId)
       if (mission && (missionProgress[missionId] || 0) < 100) {
-        const durationDays = Number.parseInt(mission.duration)
-        const totalTimeMs = durationDays * 1000
+        const durationDays = mission.duration_years * 365
+        const totalTimeMs = durationDays * 10
         const updateIntervalMs = 100
         const progressPerUpdate = (100 / totalTimeMs) * updateIntervalMs
 
@@ -255,11 +219,16 @@ export default function GameMenu() {
             const currentProgress = prev[missionId] || 0
             if (currentProgress >= 100) {
               clearInterval(interval)
-              const isSuccess = Math.random() > 0.2
-              setCompletedMissions((completed) => [...completed, { missionId, success: isSuccess }])
-              if (isSuccess && mission) {
-                setFunds((prev) => prev + mission.cost * 2)
-              }
+
+              predictMissionSuccess(mission).then((successProbability) => {
+                const isSuccess = Math.random() * 100 < successProbability
+                setCompletedMissions((completed) => [...completed, { missionId, success: isSuccess }])
+                if (isSuccess) {
+                  const missionCost = calculateMissionCost(mission)
+                  setFunds((prev) => prev + missionCost * 2)
+                }
+              })
+
               return prev
             }
             return { ...prev, [missionId]: Math.min(currentProgress + progressPerUpdate, 100) }
@@ -336,28 +305,51 @@ export default function GameMenu() {
   }
 
   const handleAcceptMission = (missionId: number) => {
-    const mission = availableMissions.find((m) => m.id === missionId) || allMissions.find((m) => m.id === missionId)
-    if (mission && funds >= mission.cost) {
-      setFunds((prev) => prev - mission.cost)
-      setActiveMissions((prev) => new Set(prev).add(missionId))
-      setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
+    const mission = availableMissions.find((m) => m.id === missionId)
+    if (mission) {
+      const missionCost = calculateMissionCost(mission)
+      if (funds >= missionCost) {
+        setFunds((prev) => prev - missionCost)
+        setActiveMissions((prev) => new Set(prev).add(missionId))
+        setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
+      }
     }
   }
 
   const handleOpenInvestment = (mission: Mission) => {
     setSelectedMissionForInvestment(mission)
-    setSelectedVehicle(mission.vehicle)
-    setFuelInvestment("")
-    setResearchInvestment("")
+    setSelectedVehicle(mission.launch_vehicle)
+    setDistanceInvestment("0")
+    setDurationInvestment("0")
+    setScienceInvestment("0")
+    setCrewInvestment("0")
+    setFuelInvestment("0")
+    setPayloadInvestment("0")
     setShowInvestmentPopup(true)
   }
 
-  const handleConfirmInvestment = () => {
+  const handleConfirmInvestment = async () => {
     if (selectedMissionForInvestment) {
       const totalCost = calculateInvestmentCost()
       if (funds >= totalCost) {
+        const modifiedMission: Mission = {
+          ...selectedMissionForInvestment,
+          distance_ly: selectedMissionForInvestment.distance_ly + (Number.parseFloat(distanceInvestment) || 0),
+          duration_years: selectedMissionForInvestment.duration_years + (Number.parseFloat(durationInvestment) || 0),
+          science_pts: selectedMissionForInvestment.science_pts + (Number.parseFloat(scienceInvestment) || 0),
+          crew_size: selectedMissionForInvestment.crew_size + (Number.parseInt(crewInvestment) || 0),
+          fuel_tons: selectedMissionForInvestment.fuel_tons + (Number.parseFloat(fuelInvestment) || 0),
+          payload_tons: selectedMissionForInvestment.payload_tons + (Number.parseFloat(payloadInvestment) || 0),
+          launch_vehicle: selectedVehicle,
+        }
+
+        setAvailableMissions((prev) =>
+          prev.map((m) => (m.id === selectedMissionForInvestment.id ? modifiedMission : m)),
+        )
+
         setFunds((prev) => prev - totalCost)
-        handleAcceptMission(selectedMissionForInvestment.id)
+        setActiveMissions((prev) => new Set(prev).add(selectedMissionForInvestment.id))
+        setMissionProgress((prev) => ({ ...prev, [selectedMissionForInvestment.id]: 0 }))
         setShowInvestmentPopup(false)
         setSelectedMissionForInvestment(null)
       }
@@ -390,6 +382,7 @@ export default function GameMenu() {
     setAvailableMissions([])
     setGameDays(30)
     setFunds(1000000)
+    setMissionIdCounter(1)
   }
 
   return (
@@ -535,6 +528,7 @@ export default function GameMenu() {
                 <div className="flex gap-6 pb-4 px-4">
                   {availableMissions.map((mission) => {
                     const isActive = activeMissions.has(mission.id)
+                    const missionCost = calculateMissionCost(mission)
                     return (
                       <div
                         key={mission.id}
@@ -560,7 +554,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>목표 대상</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.target}
+                              {mission.target_type}
                             </p>
                           </div>
 
@@ -569,7 +563,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>목표 유형</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.type}
+                              {mission.mission_type}
                             </p>
                           </div>
 
@@ -580,7 +574,7 @@ export default function GameMenu() {
                               투자 비용
                             </p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.cost.toLocaleString()} ₵
+                              {missionCost.toLocaleString()} ₵
                             </p>
                           </div>
 
@@ -589,7 +583,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-green-300"}`}>배당금</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.dividend}
+                              {(missionCost * 2).toLocaleString()} ₵
                             </p>
                           </div>
 
@@ -598,7 +592,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>임무</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.mission}
+                              {mission.mission_type} - Crew: {mission.crew_size}
                             </p>
                           </div>
 
@@ -607,7 +601,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>거리</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.distance}
+                              {mission.distance_ly.toFixed(1)} ly
                             </p>
                           </div>
 
@@ -616,7 +610,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>연료</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.fuel}
+                              {mission.fuel_tons.toFixed(0)} tons
                             </p>
                           </div>
 
@@ -625,7 +619,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>기체</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.vehicle}
+                              {mission.launch_vehicle}
                             </p>
                           </div>
 
@@ -634,7 +628,7 @@ export default function GameMenu() {
                           >
                             <p className={`text-xs mb-1 ${isActive ? "text-gray-400" : "text-cyan-300"}`}>기간</p>
                             <p className={`text-base font-bold ${isActive ? "text-gray-300" : "text-white"}`}>
-                              {mission.duration}일
+                              {mission.duration_years.toFixed(1)} years
                             </p>
                           </div>
                         </div>
@@ -651,7 +645,7 @@ export default function GameMenu() {
                             <>
                               <Button
                                 onClick={() => handleAcceptMission(mission.id)}
-                                disabled={funds < mission.cost}
+                                disabled={funds < missionCost}
                                 className="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-bold py-3 rounded-lg transition-all hover:shadow-[0_0_20px_rgba(168,85,247,0.5)] disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 임무 수락
@@ -675,8 +669,7 @@ export default function GameMenu() {
               {activeMissions.size > 0 && (
                 <div className="w-80 flex-shrink-0 space-y-4 pr-4 overflow-y-auto max-h-[70vh]">
                   {Array.from(activeMissions).map((missionId) => {
-                    const mission =
-                      availableMissions.find((m) => m.id === missionId) || allMissions.find((m) => m.id === missionId)
+                    const mission = availableMissions.find((m) => m.id === missionId)
                     const progress = missionProgress[missionId] || 0
                     const completionResult = completedMissions.find((c) => c.missionId === missionId)
 
@@ -688,7 +681,7 @@ export default function GameMenu() {
                         <h3 className="text-lg font-bold text-purple-300 mb-2">
                           Mission #{missionId} {completionResult ? "" : "진행중..."}
                         </h3>
-                        <p className="text-sm text-cyan-300 mb-3">{mission?.target} 탐사</p>
+                        <p className="text-sm text-cyan-300 mb-3">{mission?.target_type} 탐사</p>
 
                         {completionResult ? (
                           <div className="space-y-3">
@@ -760,7 +753,7 @@ export default function GameMenu() {
 
       {showInvestmentPopup && selectedMissionForInvestment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-2xl mx-4 bg-slate-900/95 border-2 border-cyan-500/50 rounded-2xl p-8 shadow-[0_0_50px_rgba(34,211,238,0.3)]">
+          <div className="relative w-full max-w-3xl mx-4 bg-slate-900/95 border-2 border-cyan-500/50 rounded-2xl p-8 shadow-[0_0_50px_rgba(34,211,238,0.3)] max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowInvestmentPopup(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
@@ -773,51 +766,156 @@ export default function GameMenu() {
             </h2>
 
             <div className="grid grid-cols-2 gap-6 mb-6">
-              <div>
+              <div className="space-y-3">
                 <h3 className="text-xl font-bold text-cyan-300 mb-3">Mission #{selectedMissionForInvestment.id}</h3>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-2 text-sm bg-slate-800/50 p-4 rounded-lg border border-cyan-500/30">
                   <p className="text-gray-300">
-                    <span className="text-cyan-300">목표:</span> {selectedMissionForInvestment.target}
+                    <span className="text-cyan-300 font-bold">목표 대상:</span>{" "}
+                    {selectedMissionForInvestment.target_type}
                   </p>
                   <p className="text-gray-300">
-                    <span className="text-cyan-300">임무:</span> {selectedMissionForInvestment.mission}
+                    <span className="text-cyan-300 font-bold">목표 유형:</span>{" "}
+                    {selectedMissionForInvestment.mission_type}
                   </p>
                   <p className="text-gray-300">
-                    <span className="text-cyan-300">기간:</span> {selectedMissionForInvestment.duration}일
+                    <span className="text-purple-300 font-bold">투자 비용:</span>{" "}
+                    {calculateMissionCost(selectedMissionForInvestment).toLocaleString()} ₵
                   </p>
                   <p className="text-gray-300">
-                    <span className="text-green-300">배당금:</span> {selectedMissionForInvestment.dividend}
+                    <span className="text-green-300 font-bold">배당금:</span>{" "}
+                    {(calculateMissionCost(selectedMissionForInvestment) * 2).toLocaleString()} ₵
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">임무:</span> {selectedMissionForInvestment.mission_type} -
+                    Crew: {selectedMissionForInvestment.crew_size}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">거리:</span>{" "}
+                    {selectedMissionForInvestment.distance_ly.toFixed(1)} ly
+                    {Number.parseFloat(distanceInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseFloat(distanceInvestment).toFixed(1)} ly</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">연료:</span>{" "}
+                    {selectedMissionForInvestment.fuel_tons.toFixed(0)} tons
+                    {Number.parseFloat(fuelInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseFloat(fuelInvestment).toFixed(0)} tons</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">기체:</span> {selectedVehicle}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">기간:</span>{" "}
+                    {selectedMissionForInvestment.duration_years.toFixed(1)} years
+                    {Number.parseFloat(durationInvestment) > 0 && (
+                      <span className="text-green-400">
+                        {" "}
+                        + {Number.parseFloat(durationInvestment).toFixed(1)} years
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">승무원:</span> {selectedMissionForInvestment.crew_size}명
+                    {Number.parseInt(crewInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseInt(crewInvestment)}명</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">과학 연구:</span>{" "}
+                    {selectedMissionForInvestment.science_pts.toFixed(0)} pts
+                    {Number.parseFloat(scienceInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseFloat(scienceInvestment).toFixed(0)} pts</span>
+                    )}
+                  </p>
+                  <p className="text-gray-300">
+                    <span className="text-cyan-300 font-bold">화물:</span>{" "}
+                    {selectedMissionForInvestment.payload_tons.toFixed(0)} tons
+                    {Number.parseFloat(payloadInvestment) > 0 && (
+                      <span className="text-green-400"> + {Number.parseFloat(payloadInvestment).toFixed(0)} tons</span>
+                    )}
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
+                <h3 className="text-xl font-bold text-purple-300 mb-3">추가 투자</h3>
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-2">연료 투자 (L)</label>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">거리 추가 (ly)</label>
                   <Input
                     type="number"
+                    step="0.1"
+                    value={distanceInvestment}
+                    onChange={(e) => setDistanceInvestment(e.target.value)}
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">기간 추가 (years)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={durationInvestment}
+                    onChange={(e) => setDurationInvestment(e.target.value)}
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">과학 연구 추가 (pts)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={scienceInvestment}
+                    onChange={(e) => setScienceInvestment(e.target.value)}
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">승무원 추가 (명)</label>
+                  <Input
+                    type="number"
+                    value={crewInvestment}
+                    onChange={(e) => setCrewInvestment(e.target.value)}
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">연료 추가 (tons)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
                     value={fuelInvestment}
                     onChange={(e) => setFuelInvestment(e.target.value)}
-                    placeholder="리터 단위"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white"
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-2">연구 투자</label>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">화물 추가 (tons)</label>
                   <Input
                     type="number"
-                    value={researchInvestment}
-                    onChange={(e) => setResearchInvestment(e.target.value)}
-                    placeholder="연구 포인트"
-                    className="bg-slate-800/50 border-cyan-500/30 text-white"
+                    step="0.1"
+                    value={payloadInvestment}
+                    onChange={(e) => setPayloadInvestment(e.target.value)}
+                    placeholder="0"
+                    className="bg-slate-800/50 border-cyan-500/30 text-white h-9"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-cyan-300 text-sm font-bold mb-2">기체 변경</label>
+                  <label className="block text-cyan-300 text-sm font-bold mb-1">기체 변경</label>
                   <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                    <SelectTrigger className="bg-slate-800/50 border-cyan-500/30 text-white">
+                    <SelectTrigger className="bg-slate-800/50 border-cyan-500/30 text-white h-9">
                       <SelectValue placeholder="기체 선택" />
                     </SelectTrigger>
                     <SelectContent className="bg-slate-900 border-cyan-500/30">
@@ -834,11 +932,11 @@ export default function GameMenu() {
 
             <div className="bg-slate-800/50 border-2 border-purple-500/30 rounded-lg p-4 mb-6">
               <p className="text-center text-xl font-bold">
-                <span className="text-purple-300">투자 금액:</span>{" "}
+                <span className="text-purple-300">추가 투자 금액:</span>{" "}
                 <span className="text-white">{calculateInvestmentCost().toLocaleString()} ₵</span>
               </p>
               <p className="text-center text-xs text-gray-400 mt-2">
-                연료: {fuelInvestment || 0}L × 10 ₵ + 연구: {researchInvestment || 0} × 100 ₵ + 기체 비용
+                추가 거리, 기간, 승무원, 연료, 화물 및 기체 변경 비용 합산
               </p>
             </div>
 

@@ -1,0 +1,9 @@
+file,feature,min,max
+space_missions_dataset.csv,Distance from Earth (light-years),0.35,49.9
+space_missions_dataset.csv,Mission Duration (years),1.4,29.5
+space_missions_dataset.csv,Mission Cost (billion USD),13.32,538.32
+space_missions_dataset.csv,Scientific Yield (points),10,99.8
+space_missions_dataset.csv,Crew Size,1,99
+space_missions_dataset.csv,Mission Success (%),66,100
+space_missions_dataset.csv,Fuel Consumption (tons),18.06,5018.6
+space_missions_dataset.csv,Payload Weight (tons),1.02,99.78
