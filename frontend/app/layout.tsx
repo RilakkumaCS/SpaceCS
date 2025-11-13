@@ -8,7 +8,7 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Space Adventure Game",
+  title: "Space Fund Game",
   description: "Space mission management game with AI-powered mission prediction",
   generator: "v0.app",
   icons: {

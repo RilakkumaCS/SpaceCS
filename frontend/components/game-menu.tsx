@@ -55,6 +55,8 @@ export default function GameMenu() {
   const [missionIdCounter, setMissionIdCounter] = useState(1)
   const [tutorialStep, setTutorialStep] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [stars1, setStars1] = useState<Array<{ left: string; top: string }>>([])
+  const [stars2, setStars2] = useState<Array<{ left: string; top: string; opacity: number }>>([])
 
   const storyText = `서기XXXX년.외곽 식민지 Ares-7은 구조적 결함으로 위기에 처했습니다.
 
@@ -295,6 +297,28 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
     return () => intervals.forEach(clearInterval)
   }, [activeMissions, missionProgress])
 
+useEffect(() => {
+    // 하이드레이션이 완료된 후 클라이언트에서만 별 위치 생성
+    const s1 = []
+    for (let i = 0; i < 50; i++) {
+      s1.push({
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 100}%`,
+      })
+    }
+    setStars1(s1)
+
+    const s2 = []
+    for (let i = 0; i < 30; i++) {
+      s2.push({
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 100}%`,
+        opacity: 0.6,
+      })
+    }
+    setStars2(s2)
+  }, [])
+
   useEffect(() => {
     if (gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat") {
       let currentIndex = 0
@@ -466,7 +490,7 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
     setMissionProgress({})
     setCompletedMissions([])
     setAvailableMissions([])
-    setGameDays(30)
+    setGameDays(50)
     setFunds(1000000)
     setMissionIdCounter(1)
   }
@@ -495,29 +519,22 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
       {/* Animated space background */}
       <div className="absolute inset-0">
         <div className="absolute inset-0">
-          {[...Array(50)].map((_, i) => (
+          {stars1.map((style, i) => (
             <div
               key={`star1-${i}`}
               className="absolute h-1 w-1 rounded-full bg-white"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-              }}
+              style={style}
             />
           ))}
         </div>
 
         {/* Stars layer 2 - bigger stars */}
         <div className="absolute inset-0">
-          {[...Array(30)].map((_, i) => (
+          {stars2.map((style, i) => (
             <div
               key={`star2-${i}`}
               className="absolute h-2 w-2 rounded-full bg-blue-200"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                opacity: 0.6,
-              }}
+              style={style}
             />
           ))}
         </div>
@@ -548,7 +565,7 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
                   SPACE
                 </span>
               </h1>
-              <h2 className="mt-2 font-mono text-3xl font-bold tracking-widest text-cyan-300 md:text-5xl">ADVENTURE</h2>
+              <h2 className="mt-2 font-mono text-3xl font-bold tracking-widest text-cyan-300 md:text-5xl">FUND</h2>
             </div>
 
             {/* Menu buttons */}
