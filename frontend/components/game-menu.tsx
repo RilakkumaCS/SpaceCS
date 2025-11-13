@@ -30,7 +30,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 export default function GameMenu() {
   const [isMuted, setIsMuted] = useState(false)
-  const [gameScreen, setGameScreen] = useState<"menu" | "story" | "missions" | "victory" | "defeat">("menu")
+  const [gameScreen, setGameScreen] = useState<"menu" | "story" | "missions" | "victory" | "defeat" | "tutorial">("menu")
   const [displayedText, setDisplayedText] = useState("")
   const [showMissionButton, setShowMissionButton] = useState(false)
 //  const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
@@ -53,13 +53,14 @@ export default function GameMenu() {
   const [selectedVehicle, setSelectedVehicle] = useState("")
   const [isStoryComplete, setIsStoryComplete] = useState(false)
   const [missionIdCounter, setMissionIdCounter] = useState(1)
+  const [tutorialStep, setTutorialStep] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const storyText = `서기XXXX년.외곽 식민지 Ares-7은 구조적 결함으로 위기에 처했습니다.
 
-생명 유지 장치의 촉매제가 고갈되어, 행성의 남은 수명은 앞으로 50년.
+생명 유지 장치의 촉매제가 고갈되어, 행성의 남은 수명은 앞으로 ${ gameDays }년.
 
-'오리온 무역 연맹'이 독점한 핵심 부품 가격은 1조 크레딧.
+'오리온 무역 연맹'이 독점한 핵심 부품 가격은 ${targetFunds}₵.
 
 당신은 한때 함대 최고의 파일럿이었지만, 지금은 버림받은 용병입니다.
 
@@ -80,9 +81,18 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
   const defeatText = `당신의 헌신적인 노력에도 불구하고 자금을 마련하는데 실패했습니다.
 
 한때 찬란하게 빛나던 Ares-7은
- 이제 우주의 역사 저편으로 사라지고 있습니다.
+
+이제 우주의 역사 저편으로 사라지고 있습니다.
 
 꺼져가는 Ares-7의 빛과 함께 당신도 눈을 감습니다.`
+
+  const tutorialMessages = [
+    { target: "period", text: "일정 시간마다 기간이 줄어듭니다. 기간이 완료되기 이전에 자금을 마련하세요" },
+    { target: "funds", text: "현재 가지고 있는 자금입니다. 기간내에 목표자금을 모아야 합니다." },
+    { target: "accept", text: "임무 기간동안 진행되는 임무입니다. 임무 정보를 보고 임무를 수락할 지 결정하세요. 투자 비용이 발생하고 임무에 성공하면 배당금을 받습니다." },
+    { target: "invest", text: "자금을 사용해서 임무에 투자할 수 있습니다." },
+  ]
+
 
   const fetchMissionsFromBackend = async (count = 5) => {
     const missions: Mission[] = []
@@ -270,10 +280,6 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
                   )
 
                 setCompletedMissions((completed) => [...completed, { missionId: mission.id, success: isSuccess }])
-                if (isSuccess) {
-                  const missionCost = calculateMissionCost(mission)
-                  setFunds((prev) => prev + missionCost * 2)
-                }
               })
             }
               return { ...prev, [mission.id]: 100 }
@@ -364,21 +370,7 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
     setGameScreen("missions")
   }
 
-  /*
   const handleAcceptMission = (missionId: number) => {
-    const mission = availableMissions.find((m) => m.id === missionId)
-    if (mission) {
-      const missionCost = calculateMissionCost(mission)
-      if (funds >= missionCost) {
-        setFunds((prev) => prev - missionCost)
-        setActiveMissions((prev) => new Set(prev).add(missionId))
-        setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
-      }
-    }
-  }*/
-
- // (핵심 수정 2)
-const handleAcceptMission = (missionId: number) => {
   const mission = availableMissions.find((m) => m.id === missionId)
   if (mission) {
     const missionCost = calculateMissionCost(mission)
@@ -443,6 +435,20 @@ const handleAcceptMission = (missionId: number) => {
   }
 
   const handleMissionComplete = (missionId: number) => {
+    // (추가) 1. 완료된 임무의 결과(성공/실패)를 찾습니다.
+    const completionResult = completedMissions.find((c) => c.missionId === missionId);
+    
+    // (추가) 2. 보상 계산을 위해 활성 임무 목록에서 임무 데이터를 찾습니다.
+    const mission = activeMissions.find((m) => m.id === missionId);
+
+    // (추가) 3. 성공한 경우에만 자금을 추가합니다.
+    if (completionResult && completionResult.success && mission) {
+      const missionCost = calculateMissionCost(mission);
+      const reward = missionCost * 2; // (보상 로직)
+      setFunds((prev) => prev + reward);
+      console.log(`[v0] Mission ${missionId} 보상 획득: +${reward} ₵`);
+    }
+
     setActiveMissions((prev) => prev.filter((m) => m.id !== missionId))
 
     setMissionProgress((prev) => {
@@ -452,8 +458,6 @@ const handleAcceptMission = (missionId: number) => {
     })
 
     setCompletedMissions((prev) => prev.filter((m) => m.missionId !== missionId))
-
-    setAvailableMissions((prev) => prev.filter((m) => m.id !== missionId))
   }
 
   const handleBackToTitle = () => {
@@ -470,6 +474,20 @@ const handleAcceptMission = (missionId: number) => {
   const handleResetMissions = async () => {
     const newMissions = await fetchMissionsFromBackend(5)
     setAvailableMissions(newMissions)
+  }
+
+  const handleTutorialClick = () => {
+    if (tutorialStep < tutorialMessages.length - 1) {
+      setTutorialStep((prev) => prev + 1)
+    } else {
+      setGameScreen("menu")
+      setTutorialStep(0)
+    }
+  }
+  
+  const handleHowToPlay = () => {
+    setGameScreen("tutorial")
+    setTutorialStep(0)
   }
 
   return (
@@ -547,6 +565,7 @@ const handleAcceptMission = (missionId: number) => {
               <Button
                 size="lg"
                 variant="outline"
+                onClick={handleHowToPlay}
                 className="group h-16 overflow-hidden rounded-xl border-2 border-secondary bg-secondary/10 text-xl font-bold tracking-wide text-white backdrop-blur-sm transition-all hover:bg-secondary/30 hover:scale-105 hover:shadow-[0_0_30px_rgba(56,189,248,0.5)]"
               >
                 <span className="relative z-10">게임 방법</span>
@@ -554,7 +573,122 @@ const handleAcceptMission = (missionId: number) => {
               </Button>
             </div>
           </>
-        ) : gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat" ? (
+        ) : gameScreen === "tutorial" ? (
+          <div className="w-full h-full flex flex-col" onClick={handleTutorialClick}>
+            <div className="flex items-center justify-between px-8 py-6">
+              <div className="relative">
+                <div className="text-cyan-300 text-lg font-bold">기간: 50년</div>
+                {tutorialStep === 0 && (
+                  <div className="absolute top-full left-0 mt-4 w-80 bg-slate-900/95 border-2 border-cyan-500/50 rounded-xl p-4 shadow-[0_0_30px_rgba(34,211,238,0.4)] animate-fade-in">
+                    <div className="absolute -top-3 left-8 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-cyan-500/50" />
+                    <p className="text-white leading-relaxed">{tutorialMessages[0].text}</p>
+                  </div>
+                )}
+              </div>
+              <h1 className="text-3xl font-bold text-white tracking-wider">SpaceMissionList</h1>
+              <div className="relative">
+                <div className="text-cyan-300 text-lg font-bold">자금: 1,000,000 ₵</div>
+                <div className="text-purple-300 text-lg font-bold">목표 자금: { targetFunds.toLocaleString() } ₵</div>
+                {tutorialStep === 1 && (
+                  <div className="absolute top-full right-0 mt-4 w-80 bg-slate-900/95 border-2 border-cyan-500/50 rounded-xl p-4 shadow-[0_0_30px_rgba(34,211,238,0.4)] animate-fade-in">
+                    <div className="absolute -top-3 right-8 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-cyan-500/50" />
+                    <p className="text-white leading-relaxed">{tutorialMessages[1].text}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center px-8 py-4">
+              <div className="relative w-80 rounded-2xl border-2 border-cyan-500/30 bg-slate-900/40 backdrop-blur-md p-6 flex flex-col">
+                <h2 className="text-2xl font-bold text-center mb-6 text-transparent bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text">
+                  Mission #1
+                </h2>
+
+                <div className="space-y-2 mb-6 flex-1 text-sm overflow-y-auto max-h-72">
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-cyan-500/20">
+                    <p className="text-xs mb-1 text-cyan-300">목표 대상</p>
+                    <p className="text-base font-bold text-white">Moon</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-cyan-500/20">
+                    <p className="text-xs mb-1 text-cyan-300">목표 유형</p>
+                    <p className="text-base font-bold text-white">Research</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-purple-500/20">
+                    <p className="text-xs mb-1 text-purple-300">투자 비용</p>
+                    <p className="text-base font-bold text-white">100,000 ₵</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">배당금</p>
+                    <p className="text-base font-bold text-white">200,000 ₵</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">임무</p>
+                    <p className="text-base font-bold text-white">Colonization - Crew</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">거리</p>
+                    <p className="text-base font-bold text-white">10ly</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">연료</p>
+                    <p className="text-base font-bold text-white">1000tons</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">기체</p>
+                    <p className="text-base font-bold text-white">Starship</p>
+                  </div>
+
+                  <div className="rounded-lg p-3 border bg-slate-800/50 border-green-500/20">
+                    <p className="text-xs mb-1 text-green-300">기간</p>
+                    <p className="text-base font-bold text-white">10 years</p>
+                  </div>
+
+                </div>
+
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Button className="w-full bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 text-white font-bold py-3 rounded-lg transition-all hover:shadow-[0_0_20px_rgba(168,85,247,0.5)]">
+                      임무 수락
+                    </Button>
+                    {tutorialStep === 2 && (
+                        <div className="absolute top-1/2 -translate-y-1/2 right-full mr-4 w-80 bg-slate-900/95 border-2 border-cyan-500/50 rounded-xl p-4 shadow-[0_0_30px_rgba(34,211,238,0.4)] animate-fade-in z-50">
+                          <div className="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-t-8 border-b-8 border-l-8 border-t-transparent border-b-transparent border-l-cyan-500/50" />
+                          <p className="text-white leading-relaxed">{tutorialMessages[2].text}</p>
+                        </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Button
+                      variant="outline"
+                      className="w-full border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-bold py-3 rounded-lg transition-all"
+                    >
+                      임무 지원금 투자
+                    </Button>
+                    {tutorialStep === 3 && (
+                        <div className="absolute top-1/2 -translate-y-1/2 right-full mr-4 w-80 bg-slate-900/95 border-2 border-cyan-500/50 rounded-xl p-4 shadow-[0_0_30px_rgba(34,211,238,0.4)] animate-fade-in z-50">
+                        <div className="absolute top-1/2 -translate-y-1/2 left-full w-0 h-0 border-t-8 border-b-8 border-l-8 border-t-transparent border-b-transparent border-l-cyan-500/50" />
+                        <p className="text-white leading-relaxed">{tutorialMessages[3].text}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-center pb-6 text-cyan-300 text-lg animate-pulse">
+              {tutorialStep < tutorialMessages.length - 1
+                ? "화면을 클릭하여 계속하세요"
+                : "화면을 클릭하여 메뉴로 돌아가세요"}
+            </div>
+          </div>
+        ): gameScreen === "story" || gameScreen === "victory" || gameScreen === "defeat" ? (
           <>
             <div className="max-w-3xl mx-auto text-center px-8">
               <p className="text-xl md:text-2xl leading-relaxed text-white whitespace-pre-line font-light">
@@ -607,7 +741,7 @@ const handleAcceptMission = (missionId: number) => {
               <div className="text-right">
                 <div className="text-cyan-300 text-lg font-bold">자금: {funds.toLocaleString()} ₵</div>
                 {}
-                <div className="text-purple-300 text-lg font-bold">목표 자금: { targetFunds } ₵</div>
+                <div className="text-purple-300 text-lg font-bold">목표 자금: { targetFunds.toLocaleString() } ₵</div>
                 </div>
             </div>
 
