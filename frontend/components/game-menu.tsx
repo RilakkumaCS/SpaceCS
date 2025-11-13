@@ -66,7 +66,7 @@ export default function GameMenu() {
 
 당신은 한때 함대 최고의 파일럿이었지만, 지금은 버림받은 용병입니다.
 
-이제 아레스-7의 마지막 희망으로 우주의 임무를 떠납니다.
+이제 Ares-7의 마지막 희망으로 우주의 임무를 떠납니다.
 
 당신의 결정이 행성의 미래를 결정할 것입니다.`
 
@@ -267,23 +267,22 @@ Ares-7은 어느때보다 찬란한 내일을 맞이할 수 있었고
               clearInterval(interval)
 
               if (currentProgress < 100) {
-                predictMissionSuccess(mission).then((successProbability) => {
-                  const randomValue = Math.random() * 100
-                  const isSuccess = randomValue < successProbability
-                  console.log(
-                    "[v0] Mission",
-                    mission.id,
-                    "- Probability:",
-                    successProbability.toFixed(2),
-                    "% Random:",
-                    randomValue.toFixed(2),
-                    "Result:",
-                    isSuccess ? "SUCCESS" : "FAILURE",
-                  )
+                const successProbability = mission.success_probability ?? 50
+                const randomValue = Math.random() * 100
+                const isSuccess = randomValue < successProbability
+                console.log(
+                  "[v0] Mission",
+                  mission.id,
+                  "- Probability:",
+                  successProbability.toFixed(2),
+                  "% Random:",
+                  randomValue.toFixed(2),
+                  "Result:",
+                  isSuccess ? "SUCCESS" : "FAILURE",
+                )
 
                 setCompletedMissions((completed) => [...completed, { missionId: mission.id, success: isSuccess }])
-              })
-            }
+              }
               return { ...prev, [mission.id]: 100 }
             }
             return { ...prev, [mission.id]: newProgress }
@@ -394,13 +393,16 @@ useEffect(() => {
     setGameScreen("missions")
   }
 
-  const handleAcceptMission = (missionId: number) => {
+  const handleAcceptMission = async (missionId: number) => {
   const mission = availableMissions.find((m) => m.id === missionId)
   if (mission) {
     const missionCost = calculateMissionCost(mission)
     if (funds >= missionCost) {
+      const successProb = await predictMissionSuccess(mission)
+      const missionWithProb = { ...mission, success_probability: successProb }
+
       setFunds((prev) => prev - missionCost)
-      setActiveMissions((prev) => [...prev, mission]) // (수정) 객체 전체를 추가
+      setActiveMissions((prev) => [...prev, missionWithProb]) // (수정) 객체 전체를 추가
       setAvailableMissions((prev) => prev.filter(m => m.id !== missionId)) // (중요) 사용 가능 목록에서 제거
       setMissionProgress((prev) => ({ ...prev, [missionId]: 0 }))
     }
@@ -425,7 +427,7 @@ useEffect(() => {
 
       if (funds >= totalCost) {
         // Apply modifications to mission
-        const modifiedMission: Mission = {
+        let modifiedMission: Mission = {
           ...selectedMissionForInvestment,
           distance_ly: Math.max(
             0.1,
@@ -445,6 +447,9 @@ useEffect(() => {
           fuel_tons: selectedMissionForInvestment.fuel_tons + Math.max(0, Number.parseFloat(fuelInvestment) || 0),
           launch_vehicle: selectedVehicle,
         }
+        
+        const successProb = await predictMissionSuccess(modifiedMission)
+        modifiedMission = { ...modifiedMission, success_probability: successProb }
 
         console.log("[v0] Modified mission:", modifiedMission)
 
@@ -919,7 +924,12 @@ useEffect(() => {
                         <h3 className="text-lg font-bold text-purple-300 mb-2">
                           Mission #{mission.id} {completionResult ? "" : "진행중..."}
                         </h3>
-                        <p className="text-sm text-cyan-300 mb-3">{mission?.target_type} 탐사</p>
+                        <div className="flex justify-between items-center text-sm mb-3">
+                          <span className="text-cyan-300">{mission?.target_type} 탐사</span>
+                          <span className="text-yellow-300 font-bold">
+                            임무성공률: {mission.success_probability?.toFixed(0) ?? "??"}%
+                          </span>
+                        </div>
 
                         {completionResult ? (
                           <div className="space-y-3">

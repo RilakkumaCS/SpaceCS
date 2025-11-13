@@ -144,6 +144,7 @@ def predict(m: MissionInput):
             success_raw=0.0,
             success_final=0.0,
             applied_penalty=0.0,
+            is_success=False,
             features_used={"error": f"Model not loaded from {MODEL_PATH}"},
         )
 
@@ -179,7 +180,7 @@ def predict(m: MissionInput):
     # penalty = 0.25 * m.payload_tons + 5 * np.log1p(m.payload_tons)
     success_final = float(np.clip(success_raw - penalty, m.clamp_min, m.clamp_max))
 
-    THRESHOLD = 50.0
+    THRESHOLD = 80.0
     is_success = bool(success_final >= THRESHOLD)
 
     # (E) 결과 반환
