@@ -36,7 +36,7 @@ export default function GameMenu() {
 //  const [activeMissions, setActiveMissions] = useState<Set<number>>(new Set())
   const [activeMissions, setActiveMissions] = useState<Mission[]>([])
   const [missionProgress, setMissionProgress] = useState<Record<number, number>>({})
-  const [gameDays, setGameDays] = useState(50)
+  const [gameDays, setGameDays] = useState(100)
   const [funds, setFunds] = useState(1000000)
   const [initialFunds] = useState(1000000)
   const [targetFunds] = useState(5000000)
